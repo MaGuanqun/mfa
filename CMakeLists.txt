@@ -2,7 +2,9 @@ project                     (mfa)
 cmake_minimum_required      (VERSION 3.15)
 
 option                      (wrapped_mpi    "MPI compiler wrapper requires no further MPI libs, true/false (default false)" OFF     )
-option                      (mfa_thread     "tbb, kokkos, sycl, or serial (default serial)"                                 serial  )
+option                      (mfa_thread     "tbb, kokkos, sycl, or serial (default tbb)"                                 "tbb"  )
+set(mfa_thread "tbb")
+message(STATUS "mfa_thread is set to ${mfa_thread}")
 option                      (s3d_infile     "Path/filename of s3d dataset (for unit testing)"                                       )
 option                      (mfa_build_examples "Build MFA examples (default true)"                                         ON      )
 option                      (mfa_build_tests "Build MFA tests (default true)"                                               ON      )
@@ -11,6 +13,14 @@ option                      (eigen_thread   "Use OpenMP for Eigen threading, tru
 option                      (KOKKOS_INCLUDE_DIRS    "Path of include directories for Kokkos (optional)"                             )
 option                      (KOKKOS_LIBRARY "Kokkos library (optional)"                                                             )
 option                      (OPENMP_LIBRARY "OpenMP library if not found automatically (optional)"                                  )
+
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if(APPLE)
+    set(CMAKE_INSTALL_RPATH "@loader_path/../lib")
+else()
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
+endif()
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 
 # C++11
 set                         (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
@@ -26,6 +36,9 @@ if                          (NOT wrapped_mpi)
     find_package            (MPI REQUIRED)
     set                     (libraries ${libraries} ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
 endif                       ()
+
+#  find_package(OpenMP REQUIRED)
+ message(STATUS "{OpenMP_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
 # MFA threading model
 if                          (mfa_thread MATCHES "tbb")
