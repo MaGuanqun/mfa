@@ -38,7 +38,8 @@ if                          (NOT wrapped_mpi)
 endif                       ()
 
 #  find_package(OpenMP REQUIRED)
- message(STATUS "{OpenMP_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+#  message(STATUS "{OpenMP_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+ 
 
 # MFA threading model
 if                          (mfa_thread MATCHES "tbb")
@@ -76,6 +77,7 @@ else                        ()
     add_definitions         (-DMFA_SERIAL)
 endif                       ()
 
+message(STATUS "eigen_thread is set to ${eigen_thread}")
 # Eigen threading (requires OpenMP to be available)
 if                          (eigen_thread)
     find_package            (OpenMP)

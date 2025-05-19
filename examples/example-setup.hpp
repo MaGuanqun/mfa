@@ -446,12 +446,12 @@ using namespace std;
         // cesm dataset:  CESM-ATM-tylor/1800x3600/FLDSC_1_1800_3600.dat
         if (input == "cesm")
         {
-            d_args.full_dom_pts = {1800, 3600};
+            d_args.full_dom_pts = {3600, 1800};
             d_args.ndom_pts = d_args.full_dom_pts;
 
             if (!adaptive)
             {
-                vars_nctrl = {300, 600};
+                vars_nctrl = {600, 300};
             }
         }
 
