@@ -7,7 +7,7 @@ set(mfa_thread "tbb")
 message(STATUS "mfa_thread is set to ${mfa_thread}")
 option                      (s3d_infile     "Path/filename of s3d dataset (for unit testing)"                                       )
 option                      (mfa_build_examples "Build MFA examples (default true)"                                         ON      )
-option                      (mfa_build_tests "Build MFA tests (default true)"                                               ON      )
+option                      (mfa_build_tests "Build MFA tests (default true)"                                               OFF      )
 option                      (mfa_python     "Build Python bindings, true/false (default false)"                             OFF     )
 option                      (eigen_thread   "Use OpenMP for Eigen threading, true/false (default false)"                    OFF     )
 option                      (KOKKOS_INCLUDE_DIRS    "Path of include directories for Kokkos (optional)"                             )
@@ -153,7 +153,7 @@ set                         (libraries
                              ${CMAKE_THREAD_LIBS_INIT}
                              ${KK_LIB} )
 
-
+add_compile_options(-Wno-cpp)
 
 if                          (mfa_build_examples)
     add_subdirectory        (examples)

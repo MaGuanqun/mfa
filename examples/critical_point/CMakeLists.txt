@@ -1,5 +1,6 @@
 include_directories         (${CMAKE_SOURCE_DIR}/examples)          # needed for block.hpp and opts.h
 include_directories         (${CMAKE_SOURCE_DIR}/examples/critical_point)          # needed for block.hpp and opts.h
+include_directories         (${CMAKE_SOURCE_DIR}/examples/utility)          # needed for block.hpp and opts.h
 
 add_executable              (derivative_control_point        derivative_control_point.cpp)
 add_executable              (convert_cpt_to_vtk        convert_cpt_to_vtk.cpp ${CMAKE_SOURCE_DIR}/examples/convert/writer.cpp)
