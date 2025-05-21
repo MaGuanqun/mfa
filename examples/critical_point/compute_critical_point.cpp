@@ -176,11 +176,11 @@ int main(int argc, char** argv)
                 VectorXi span_num = tc.nctrl_pts-b->mfa->var(0).p;
                 same_root_epsilon *= min_;
                 VectorXd Span_size = local_domain_range.cwiseQuotient(span_num.cast<double>());
-                double min_span_size = Span_size.minCoeff()/64.0;
-                if(min_span_size<same_root_epsilon)
-                {
-                    same_root_epsilon = min_span_size;
-                }
+                // double min_span_size = Span_size.minCoeff()/64.0;
+                // if(min_span_size<same_root_epsilon)
+                // {
+                //     same_root_epsilon = min_span_size;
+                // }
 
                 selected_span.clear();
 
