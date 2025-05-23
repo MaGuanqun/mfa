@@ -21,6 +21,209 @@
 
 #include    "writer.hpp"
 #include    "block.hpp"
+#include   "mfa_extend.h"
+#include "write_to_ply.h"
+#include "utility_function.h"
+#include "../contour/ridge_valley_graph.h"
+template<typename T>
+void write_function_pointset_vtk(mfa::PointSet<T>* ps, char* filename,Block<real_t>* block,int output_gradient_magnitude, bool set_zero,std::chrono::duration<double>& run_time)
+{
+    auto start_time = std::chrono::high_resolution_clock::now();
+    if (ps == nullptr)
+    {
+        cout << "Did not write " << filename << " due to uninitialized pointset" << endl;
+        return;
+    }
+    if (ps->npts == 0)
+    {
+        cout << "Did not write " << filename << " due to empty pointset" << endl;
+        return;
+    }
+
+    int dom_dim = ps->dom_dim;
+    // int pt_dim  = ps->pt_dim;
+    int nvars = ps->nvars();   // TODO: this assumes all vars are scalar
+
+    int ori_nvars = nvars;
+
+    if (output_gradient_magnitude)
+    {
+        nvars *=2 ;
+    }
+
+
+
+
+    vector<int> npts_dim;  // only used if data is structured
+    if (ps->is_structured())
+    {
+        for (size_t k = 0; k < 3; k++)
+        {
+            if (k < dom_dim) 
+                npts_dim.push_back(ps->ndom_pts(k));
+            else
+                npts_dim.push_back(1);
+        }
+    }
+
+    float** pt_data = new float*[nvars];
+    for (size_t j = 0; j < nvars; j++)
+    {
+        pt_data[j]  = new float[ps->npts];
+    }
+
+    vector<vec3d>   pt_coords;
+    pt_coords.resize(ps->npts);
+
+    VectorXd range=block->core_maxs-block->core_mins;
+
+    // std::cout<<"======="<<std::endl;
+    // std::cout<<range.size()<<std::endl;
+    // std::cout<<ps->domain.row(0).transpose().size()<<" "<<ps->domain.row(0).transpose().cols()<<std::endl;
+
+    // VectorX<T> max_per_column = ps->domain.colwise().maxCoeff();
+    // VectorX<T> min_per_column = ps->domain.colwise().minCoeff();
+    // std::cout<<max_per_column.transpose()<<std::endl;
+    // std::cout<<min_per_column.transpose()<<std::endl;
+    tbb::affinity_partitioner ap;
+    tbb::parallel_for((tbb::blocked_range<size_t>(0,ps->npts)),
+    [&](const tbb::blocked_range<size_t>& interval)
+    {
+        for(size_t j=interval.begin();j<interval.end();++j)
+        {
+            VectorX<T> result_value(block->mfa->nvars());
+            VectorX<T> dom_coordinate = ps->domain.block(j,0,1,dom_dim).transpose();
+            //covert geo_coordinate to [0,1]
+            // VectorX<T> geo_coordinate = (dom_coordinate-block->core_mins).cwiseQuotient(range);
+
+            for(int m=0;m<dom_dim;m++)
+            {
+                if(dom_coordinate[m]<block->core_mins[m]){
+                    dom_coordinate[m] = block->core_mins[m];
+                }
+                if(dom_coordinate[m]>block->core_maxs[m]){
+                    dom_coordinate[m] = block->core_maxs[m];
+                }
+            }
+
+
+            if(output_gradient_magnitude)
+            {
+                VectorX<T> f_first_deriv(dom_coordinate.size());
+                for (int k = 0; k < ori_nvars; k++)                         // science variables
+                {
+                    mfa_extend::recover_mfa(block, dom_coordinate,result_value);
+                    // block->mfa->DecodePt(*(block->vars[k].mfa_data),geo_coordinate,result_value);
+                    pt_data[k][j] = result_value[0];
+                    ridge_valley_graph::compute_gradient(dom_coordinate,block,f_first_deriv);
+                    pt_data[k+ori_nvars][j] = f_first_deriv.squaredNorm();
+
+                }
+            }
+            else
+            {
+                for (int k = 0; k < nvars; k++)                         // science variables
+                {
+                    mfa_extend::recover_mfa(block, dom_coordinate,result_value);
+                    // block->mfa->DecodePt(*(block->vars[k].mfa_data),geo_coordinate,result_value);
+                    pt_data[k][j] = result_value[0];
+                }
+            }
+
+
+            vec3d           pt;
+            pt.x = ps->domain(j, 0);
+            
+            if(dom_dim > 1){
+                pt.y = ps->domain(j, 1);
+                if(dom_dim<3)
+                {
+                    if(set_zero)
+                    {
+                        pt.z =0.0;//pt_data[0][j]
+                    }
+                    else{
+                        pt.z =pt_data[0][j];
+                    }
+                }
+                else{
+                    pt.z = ps->domain(j, 2);
+                }
+            }
+            else
+            {
+                pt.y = pt_data[0][j];
+                pt.z=0.0;
+            }   
+            pt_coords[j]=pt;
+        }
+        
+    },ap
+    );
+
+    // int text_index;
+    // for(int i=0;i<ps->ndom_pts(1);++i)
+    // {
+    //     text_index = i*ps->ndom_pts(0);
+    //     VectorX<T> geo_coordinate = ps->domain.block(text_index,0,1,dom_dim).transpose();
+    //         //covert geo_coordinate to [0,1]
+    //     geo_coordinate = (geo_coordinate-block->core_mins).cwiseQuotient(range);
+    //     std::cout<<geo_coordinate[0]<<" "<<geo_coordinate[1]<<" "<<pt_data[0][text_index] << std::endl;
+    // }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    run_time=end_time-start_time; // measure the time it took to compute the values
+
+    // science variable settings
+    int* vardims        = new int[nvars];
+    char** varnames     = new char*[nvars];
+    int* centerings     = new int[nvars];
+    for (int i = 0; i < nvars; i++)
+    {
+        vardims[i]      = 1;                                // TODO; treating each variable as a scalar (for now)
+        varnames[i]     = new char[256];
+        centerings[i]   = 1;
+        sprintf(varnames[i], "var%d", i);
+    }
+   // write raw original points
+    if (ps->is_structured())
+    {
+        write_curvilinear_mesh(
+            /* const char *filename */                  filename,
+            /* int useBinary */                         0,
+            /* int *dims */                             &npts_dim[0],
+            /* float *pts */                            &(pt_coords[0].x),
+            /* int nvars */                             nvars,
+            /* int *vardim */                           vardims,
+            /* int *centering */                        centerings,
+            /* const char * const *varnames */          varnames,
+            /* float **vars */                          pt_data);
+    }
+    else
+    {
+        write_point_mesh(
+        /* const char *filename */                      filename,
+        /* int useBinary */                             0,
+        /* int npts */                                  pt_coords.size(),
+        /* float *pts */                                &(pt_coords[0].x),
+        /* int nvars */                                 nvars,
+        /* int *vardim */                               vardims,
+        /* const char * const *varnames */              varnames,
+        /* float **vars */                              pt_data);
+    }
+
+    delete[] vardims;
+    for (int i = 0; i < nvars; i++)
+        delete[] varnames[i];
+    delete[] varnames;
+    delete[] centerings;
+    for (int j = 0; j < nvars; j++)
+    {
+        delete[] pt_data[j];
+    }
+    delete[] pt_data;
+}
+
 
 // TODO: Only scalar-valued and 3D vector-valued variables are supported (because of the VTK writer)
 // If a variable has a different output dimension, the writer will skip that variable and continue.
@@ -986,11 +1189,237 @@ void PrepRenderingData(
     PrepTmeshTensorExtents(tensor_pts_real, tensor_pts_index, ntensor_pts, block);
 }
 
+template<typename T>
+void set_point_set(mfa::PointSet<T>*& point_set, size_t dom_dim, size_t pt_dim,
+const VectorX<T>& core_min, const VectorX<T>& core_max, int upsample_factor, std::vector<T>& shrink_range_raio,Block<real_t>* block)
+{
+    VectorXi ndom_pts(dom_dim);
+    int npts = 1;
+
+    std::vector<T> dim_start(2*dom_dim);
+    std::vector<T> modified_shrink_range_raio(2*dom_dim); //To be consisted with dim_start after rounding
+
+
+
+
+
+
+    VectorXi ori_ndom_pts(dom_dim);
+    auto& tc = block->mfa->var(0).tmesh.tensor_prods[0];
+    VectorXi span_num = tc.nctrl_pts-block->mfa->var(0).p;
+    for(int i=0;i<dom_dim;i++)
+    {
+        ori_ndom_pts(i) = upsample_factor * span_num(i)+1;
+    }
+
+        for(int i=0;i<2;++i)
+    {
+        if(shrink_range_raio[2*i+1]==1)
+        {
+            shrink_range_raio[2*i+1]=span_num[i];
+        }
+        
+    }
+    
+
+    for (int i = 0; i < dom_dim; i++)
+    {
+
+        dim_start[2*i]= upsample_factor * shrink_range_raio[2*i]; //round((ori_ndom_pts[i]-1)*shrink_range_raio[2*i]);
+        dim_start[2*i+1]=upsample_factor * shrink_range_raio[2*i+1];// round((ori_ndom_pts[i]-1)*shrink_range_raio[2*i+1]);
+
+        ndom_pts(i)     =  (dim_start[2*i+1] - dim_start[2*i] + 1);
+        npts    *= ndom_pts(i);
+
+        modified_shrink_range_raio[2*i]=dim_start[2*i]/(ori_ndom_pts[i]-1);
+        modified_shrink_range_raio[2*i+1]=dim_start[2*i+1]/(ori_ndom_pts[i]-1);
+
+    }
+
+
+    std::cout<<modified_shrink_range_raio[0]<<" "<<modified_shrink_range_raio[1]<<std::endl;
+    std::cout<<modified_shrink_range_raio[2]<<" "<<modified_shrink_range_raio[3]<<std::endl;
+
+    VectorXi mdims(2);
+    mdims(0) = dom_dim;
+    mdims(1) = pt_dim-dom_dim;
+    point_set = new mfa::PointSet<T>(dom_dim, mdims, npts, ndom_pts);
+
+    VectorX<T> d(dom_dim);               // step in domain points in each dimension
+    VectorX<T> p0(dom_dim);              // starting point in each dimension
+    // assign values to the domain (geometry)
+
+    int nghost_pts;                         // number of ghost points in current dimension
+    for (int i = 0; i < dom_dim; i++)
+    {
+        d(i) =  (core_max(i) - core_min(i)) / (ndom_pts(i) - 1) *(modified_shrink_range_raio[2*i+1]-modified_shrink_range_raio[2*i]);
+        p0(i) = core_min(i)+(core_max(i) - core_min(i))*modified_shrink_range_raio[2*i];
+    }
+
+    mfa::VolIterator vol_it(ndom_pts);
+    // current index of domain point in each dim, initialized to 0s
+    // flattened loop over all the points in a domain
+    while (!vol_it.done())
+    {
+        int j = (int)vol_it.cur_iter();
+        // compute geometry coordinates of domain point
+        for (auto i = 0; i < dom_dim; i++)
+            point_set->domain(j, i) = p0(i) + vol_it.idx_dim(i) * d(i);
+
+        vol_it.incr_iter();
+    }
+}
+
+
+
+template<typename T>
+void save_ply(std::string& file_name, Block<real_t>* block, size_t dom_dim, size_t pt_dim,
+int upsample_factor, std::vector<T>& shrink_range_raio)
+{
+
+    VectorXi ori_ndom_pts(dom_dim);
+    auto& tc = block->mfa->var(0).tmesh.tensor_prods[0];
+    VectorXi span_num = tc.nctrl_pts-block->mfa->var(0).p;
+    for(int i=0;i<dom_dim;i++)
+    {
+        ori_ndom_pts(i) = upsample_factor * span_num(i)+1;
+    }
+
+    VectorXi ndom_pts(dom_dim);
+    int npts = 1;
+
+    std::vector<T> dim_start(2*dom_dim);
+    std::vector<T> modified_shrink_range_raio(2*dom_dim); //To be consisted with dim_start after rounding
+    for (int i = 0; i < dom_dim; i++)
+    {
+
+        dim_start[2*i]=round((ori_ndom_pts[i]-1)*shrink_range_raio[2*i]*100)*0.01;
+        dim_start[2*i+1]=round((ori_ndom_pts[i]-1)*shrink_range_raio[2*i+1]*100)*0.01;
+
+        ndom_pts(i)     =  (dim_start[2*i+1] - dim_start[2*i] + 1);
+        npts    *= ndom_pts(i);
+
+        modified_shrink_range_raio[2*i]=dim_start[2*i]/(ori_ndom_pts[i]-1);
+        modified_shrink_range_raio[2*i+1]=dim_start[2*i+1]/(ori_ndom_pts[i]-1);
+
+    }
+
+
+    VectorX<T> d(dom_dim);               // step in domain points in each dimension
+    VectorX<T> p0(dom_dim);   
+    
+               // starting point in each dimension
+
+    for (int i = 0; i < dom_dim; i++)
+    {
+        d(i) =  (block->core_maxs(i) - block->core_mins(i)) / (ndom_pts(i) - 1) *(modified_shrink_range_raio[2*i+1]-modified_shrink_range_raio[2*i]);
+        p0(i) = block->core_mins(i)+(block->core_maxs(i) - block->core_mins(i))*modified_shrink_range_raio[2*i];
+    }
+
+    // VectorX<T> d_geometri(dom_dim);              
+    // VectorX<T> p0_geometri(dom_dim);
+    // for (int i = 0; i < dom_dim; i++)
+    // {
+    //     d_geometri(i) =  1.0 / (ndom_pts(i) - 1) *(modified_shrink_range_raio[2*i+1]-modified_shrink_range_raio[2*i]);
+    //     p0_geometri(i) = modified_shrink_range_raio[2*i];
+    // }
+
+    std::vector<std::vector<T>> vertex_domain(dom_dim);
+    // std::vector<std::vector<T>> vertex_geometri(dom_dim);
+    for(int i=0;i<dom_dim;i++)
+    {
+        vertex_domain[i].resize(ndom_pts(i));
+        // vertex_geometri[i].resize(ndom_pts(i));
+        for(int j=0;j<ndom_pts(i);j++)
+        {
+            vertex_domain[i][j]=p0(i)+T(j)*d(i);
+            // vertex_geometri[i][j]=p0_geometri(i)+T(j)*d_geometri(i);
+        }
+    }
+
+    VectorXi number_in_every_domain(dom_dim);
+    utility::obtain_number_in_every_domain( ndom_pts,number_in_every_domain);
+
+
+
+    int nvars = block->mfa->nvars();    
+    std::vector<std::vector<T>> pt_data(nvars);
+
+    for (size_t j = 0; j < nvars; j++)
+    {
+        pt_data[j].resize(npts);
+    }
+
+    tbb::affinity_partitioner ap;
+
+
+    tbb::parallel_for((tbb::blocked_range<size_t>(0,npts)),
+    [&](const tbb::blocked_range<size_t>& interval)
+    {
+        VectorXi domain_index_;
+        for(size_t j=interval.begin();j<interval.end();++j)
+        {
+            utility::obtainDomainIndex(j,domain_index_,number_in_every_domain);
+
+        //Only support 2D
+            VectorX<T> result_value(block->mfa->nvars());
+
+            for(int m=0;m<dom_dim;m++)
+            {
+                if(vertex_domain[m][domain_index_(m)]<block->core_mins(m)){
+                    vertex_domain[m][domain_index_(m)] = block->core_mins(m);
+                }
+                if(vertex_domain[m][domain_index_(m)]>block->core_maxs(m))
+                {
+                    vertex_domain[m][domain_index_(m)]= block->core_maxs(m);
+                }
+            }
+
+            VectorX<T> coordinate(dom_dim);
+            
+            for(int m=0;m<dom_dim;m++)
+            {
+                coordinate[m]=vertex_domain[m][domain_index_(m)];
+            }
+
+
+
+            for (int k = 0; k < nvars; k++)                         // science variables
+            {
+                mfa_extend::recover_mfa(block,coordinate,result_value);
+                // block->mfa->DecodePt(*(block->vars[k].mfa_data),geo_coordinate,result_value);
+                pt_data[k][j] = result_value[0];
+            }
+        }
+        
+    },ap
+    );
+
+    // int text_index;
+    // for(int i=0;i<ndom_pts(1);++i)
+    // {
+    //     text_index = i*ndom_pts(0);
+    //     std::cout<<vertex_geometri[0][0]<<" "<<vertex_geometri[1][i]<<" "<<pt_data[0][text_index] << std::endl;
+    // }
+
+    // vertex_geometri.clear();
+    // vertex_geometri.shrink_to_fit();
+
+    write_to_ply::write_ply(file_name,vertex_domain,pt_data[0]);
+
+}
+
+
 // write vtk files for initial, approximated, control points
 void write_vtk_files(
         Block<real_t>* b,
         const          diy::Master::ProxyWithLink& cp,
-        int            sci_var)                     // science variable to render geometrically for 1d and 2d domains
+        int            sci_var,
+        int upsample_factor,
+        std::vector<double>& shrink_range_raio,
+        int ignore,
+        string& output_obj_name, string& output_vtk_name,
+        int output_gradient_magnitude, bool set_zero)                     // science variable to render geometrically for 1d and 2d domains
 {
     vector<vec3d>               geom_ctrl_pts;      // control points (<= 3d) in geometry
     vector < vector <vec3d> >   vars_ctrl_pts;      // control points (<= 3d) in science variables
@@ -1023,7 +1452,16 @@ void write_vtk_files(
 
     int dom_dim = b->mfa->dom_dim;
     int nvars   = b->mfa->nvars();
+    int pt_dim = dom_dim+b->mfa->nvars();
 
+    if(shrink_range_raio.size()<2*dom_dim)
+    {
+        for (auto i = (shrink_range_raio.size()>>1); i < dom_dim; i++)
+        {
+            shrink_range_raio.push_back(0.0);
+            shrink_range_raio.push_back(1.0);
+        }
+    }
     // science variable settings
     int vardim          = 1;
     int centering       = 1;
@@ -1041,6 +1479,8 @@ void write_vtk_files(
 
     // write geometry control points
     char filename[256];
+    if (ignore == 0)
+    {
     snprintf(filename, 256, "geom_control_points_gid_%d.vtk", cp.gid());
     if (geom_ctrl_pts.size())
         write_point_mesh(
@@ -1068,6 +1508,36 @@ void write_vtk_files(
             /* const char * const *varnames */              varnames,
             /* float **vars */                              vars_ctrl_data);
     }
+}
+
+
+char function_filename[256];
+    
+sprintf(function_filename, output_vtk_name.c_str(), cp.gid());
+mfa::PointSet<real_t> *point_set;
+
+
+if(!output_obj_name.empty())
+{
+    save_ply(output_obj_name,b,dom_dim,pt_dim,upsample_factor,shrink_range_raio);
+}
+else
+{
+    //set a upsampled pointset
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    set_point_set(point_set, dom_dim, pt_dim, b->core_mins, b->core_maxs,upsample_factor,shrink_range_raio,b);
+    auto end_time = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> run_time;
+    // std::cout<< input->domain<<std::endl;
+    write_function_pointset_vtk(point_set,function_filename,b,output_gradient_magnitude,set_zero,run_time);
+
+    
+    std::cout<<"compute value and gradient mag running time, millisecond : "<< std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time + run_time).count()/1000<<std::endl;
+}
+
+
 
 #ifdef MFA_DEBUG_KNOT_INSERTION
 
@@ -1089,6 +1559,8 @@ void write_vtk_files(
 
 #endif
 
+if (ignore == 0)
+{
     char input_filename[256];
     char approx_filename[256];
     char errs_filename[256];
@@ -1154,6 +1626,7 @@ void write_vtk_files(
             /* const char * const *varnames */              &name_tensor,
             /* float **vars */                              &vars);
 
+    }
     delete[] vardims;
     for (int i = 0; i < nvars; i++)
         delete[] varnames[i];
@@ -1166,6 +1639,169 @@ void write_vtk_files(
     delete[] vars_ctrl_data;
 }
 
+template<typename T>
+void save_data(DomainArgs& d_args,string& file_name, string& input, string& output_name, int dom_dim, const VectorXi& mdims,std::vector<double>& shrink_ratio)
+{
+    int total_pts = 1;
+    VectorXi ndom_pts(dom_dim);
+    VectorXi ori_ndom_pts(dom_dim);
+    int origianl_total_points = 1;
+
+    std::vector<int> block_dims(shrink_ratio.size());
+    for (size_t i = 0; i < shrink_ratio.size(); i+=2)
+    {
+        block_dims[i] =round((d_args.ndom_pts[i>>1] -1) * shrink_ratio[i]);
+        block_dims[i+1] = round((d_args.ndom_pts[i>>1]-1) * shrink_ratio[i+1]);
+
+        total_pts *= block_dims[i+1]-block_dims[i] + 1;
+        ndom_pts(i>>1) = block_dims[i+1]-block_dims[i] + 1;
+
+        ori_ndom_pts(i>>1) = d_args.ndom_pts[i>>1];
+
+        origianl_total_points*=d_args.ndom_pts[i>>1];
+    }
+
+    std::vector<T> val(origianl_total_points);
+    
+    // save raw data
+
+    FILE *fd = fopen(file_name.c_str(), "r");
+    assert(fd);
+
+    std::cout<<"reading raw data from file: "<<file_name<<std::endl;
+
+    if (!fread(&val[0], sizeof(T), origianl_total_points, fd))
+    {
+        perror("Error: unable to read raw file\n");
+        exit(0);
+    }
+    
+
+    mfa::PointSet<double>    *point_set;  
+    point_set = new mfa::PointSet<double>(dom_dim, mdims, total_pts, ndom_pts);
+
+    std::cout<<" origianl_total_points "<<origianl_total_points<<std::endl;
+    std::cout<<block_dims[0]<<" "<<block_dims[1]<<" "<<block_dims[2]<<" "<<block_dims[3]<<std::endl;
+    std::cout<<"ndom_pts "<<ndom_pts(0)<<" "<<ndom_pts(1)<<std::endl;
+    // for (size_t i = 0; i < val.size(); i++)
+    //     point_set->domain(i, 2) = val[i];
+
+    // set domain values (just equal to i, j; ie, dx, dy = 1, 1)
+    int n=0;
+    if(dom_dim==2){
+    for (size_t j = 0; j < (size_t)(ndom_pts(1)); j++)
+        for (size_t i = 0; i < (size_t)(ndom_pts(0)); i++)
+        {
+            point_set->domain(n, 0) = i + block_dims[0];
+            point_set->domain(n, 1) = j + block_dims[2];
+            point_set->domain(n, 2) = val[ori_ndom_pts(0)*(j+block_dims[2])+i+block_dims[0]];
+            n++;
+        }
+    }
+    else if(dom_dim==3){
+        for(size_t k = 0; k < (size_t)(ndom_pts(2)); k++){
+            for (size_t j = 0; j < (size_t)(ndom_pts(1)); j++)
+                for (size_t i = 0; i < (size_t)(ndom_pts(0)); i++)
+                {
+                    point_set->domain(n, 0) = i + block_dims[0];
+                    point_set->domain(n, 1) = j + block_dims[2];
+                    point_set->domain(n, 2) = k + block_dims[4]; //val[ori_ndom_pts(0)*(j+block_dims[2])+i+block_dims[0]];
+                    n++;
+                }
+        }
+    }
+
+    
+
+
+    char* cstr = new char[output_name.length() + 1];
+    std::strcpy(cstr, output_name.c_str());
+    write_pointset_vtk(point_set,val.data(), cstr);
+    delete[] cstr;
+}
+
+void save_raw_data(string& file_name, string& input, string& output_name, int dom_dim, const VectorXi& mdims,std::vector<double>& shrink_ratio)
+{
+    std::vector<int> mdims_;
+    for (int i = 0; i < mdims.size(); i++)
+    {
+        mdims_.push_back(mdims(i));
+    }
+    
+    DomainArgs d_args(dom_dim, mdims_);
+
+    if (input == "cesm")
+    {
+        d_args.ndom_pts.resize(2);
+        d_args.ndom_pts[0]  = 3600;
+        d_args.ndom_pts[1]  = 1800;
+
+        save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+
+    if (input == "s3d")
+    {
+        d_args.ndom_pts.resize(3);
+        d_args.ndom_pts[0]  = 704;
+        d_args.ndom_pts[1]  = 540;
+        d_args.ndom_pts[2]  = 550;
+        save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+
+    if (input == "miranda")
+    {
+        d_args.ndom_pts.resize(3);
+        d_args.ndom_pts[0]          = 384;
+        d_args.ndom_pts[1]          = 384;
+        d_args.ndom_pts[2]          = 256;
+        save_data<double>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+
+    if (input == "nek")
+    {
+        d_args.ndom_pts.resize(3);
+        d_args.ndom_pts[0]  = 200;
+        d_args.ndom_pts[1]  = 200;
+        d_args.ndom_pts[2]  = 200;
+        save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+
+    }
+
+    if(input == "hurricane")
+    {
+        d_args.ndom_pts.resize(3);
+        d_args.ndom_pts[0]          = 500;
+        d_args.ndom_pts[1]          = 500;
+        d_args.ndom_pts[2]     = 100;
+        save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+
+    if(input=="qmcpack")
+    {
+        d_args.ndom_pts.resize(3);
+        // d_args.vars_nctrl_pts[0].resize(3);
+        d_args.ndom_pts[0]          = 69;
+        d_args.ndom_pts[1]          = 69;
+        d_args.ndom_pts[2]          = 115;
+       
+       save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+
+     if(input=="rti")
+    {
+        d_args.ndom_pts.resize(3);
+        // d_args.vars_nctrl_pts[0].resize(3);
+        d_args.ndom_pts[0]          = 144;
+        d_args.ndom_pts[1]          = 256;
+        d_args.ndom_pts[2]          = 256;
+       
+       save_data<float>(d_args,file_name, input, output_name, dom_dim, mdims,shrink_ratio);
+    }
+  
+
+}
+
+
 int main(int argc, char ** argv)
 {
     // initialize MPI
@@ -1177,6 +1813,22 @@ int main(int argc, char ** argv)
     string                      infile = "approx.mfa";  // diy input file
     bool                        help;                   // show help
     int                         sci_var = 0;            // science variable to render geometrically for 1d and 2d domains
+    int                         dom_dim = 2;
+    int                         pt_dim = 3;        // domain and point dimensionality, respectively
+    int set_zero=1;
+
+    int upsample_factor = 1;//upsample factor for pointset based on original pointset
+    // int shrink_range_raio = 1;//shrink the range of the pointset
+
+    string input_shrink_ratio = "0-1-0-1";
+
+    string raw_data_file;
+    string output_raw_vtk = "output_raw.vtk";
+    string output_vtk_name = "output.vtk";
+    int ignore = 1;
+
+    string output_obj_name;
+    int output_gradient_magnitude = 0;
 
     // get command line arguments
     opts::Options ops;
@@ -1186,12 +1838,56 @@ int main(int argc, char ** argv)
     ops >> opts::Option('v', "var",         sci_var,    " science variable to render geometrically for 1d and 2d domains");
     ops >> opts::Option('h', "help",        help,       " show help");
 
+    ops >> opts::Option('u', "upsample",    upsample_factor,       " upsample factor for pointset based on original pointset");
+    ops >> opts::Option('s', "shrink range",    input_shrink_ratio,       " shrink the range of the pointset, by \"x1-x2-y1-y2-z1-z2-...\"");
+    ops >> opts::Option('r', "raw data file",    raw_data_file,       " original raw data file name");
+    ops >> opts::Option('o', "output raw vtk",    output_raw_vtk,       " file name of output vtk of raw file");
+    ops >> opts::Option('m', "dom_dim",    dom_dim,       " domain dimensionality for raw data");
+    ops >> opts::Option('d', "pt_dim",    pt_dim,       " point dimensionality for raw data");
+    ops >> opts::Option('k', "ignore",    ignore,       " ignore all other files, only output MFA sampled ttk file");
+    ops >> opts::Option('n', "output obj name",    output_obj_name,       " output ply file name");
+    ops >> opts::Option('t', "output vtk name",    output_vtk_name,       " output vtk file name");
+    ops >> opts::Option('g', "output gradient magnitude",    output_gradient_magnitude,       " add extra variable for gradient magnitude");
+    ops >> opts::Option('z', "set zero",    set_zero,       " set zero for the pointset");
+
+
     if (!ops.parse(argc, argv) || help)
     {
         if (world.rank() == 0)
             std::cout << ops;
         return 1;
     }
+
+
+    std::istringstream iss(input_shrink_ratio);
+    std::vector<double> shrink_ratio;
+    double number;
+    std::string token;
+    while (std::getline(iss, token, '-')) {
+        std::istringstream tokenStream(token);
+        if (tokenStream >> number) {
+            shrink_ratio.push_back(number);
+        }
+    }  
+
+
+    if(2*dom_dim!=shrink_ratio.size())
+    {
+        for(int i=0;i<dom_dim - shrink_ratio.size()/2;i++)
+        {
+            shrink_ratio.push_back(0.0);
+            shrink_ratio.push_back(1.0);
+        }
+    }
+
+    std::cout<<"shrink ratio is: ";
+    for(auto num:shrink_ratio)
+    {
+        std::cout<<num<<" ";
+    }
+    std::cout<<std::endl;
+
+
 
     // echo args
     fprintf(stderr, "\n--------- Input arguments ----------\n");
@@ -1212,6 +1908,17 @@ int main(int argc, char ** argv)
 #endif
     fprintf(stderr, "-------------------------------------\n\n");
 
+
+    
+    if (!raw_data_file.empty())
+    {
+        VectorXi mdims(2);
+        mdims(0)=dom_dim;
+        mdims(1)=pt_dim-dom_dim;
+        std::cout<<"save raw data"<<std::endl;
+        save_raw_data(raw_data_file,input,output_raw_vtk,dom_dim,mdims,shrink_ratio);
+        exit(0);
+    }
     // initialize DIY
     diy::FileStorage storage("./DIY.XXXXXX");     // used for blocks to be moved out of core
     diy::Master      master(world,
@@ -1226,5 +1933,6 @@ int main(int argc, char ** argv)
 
     // write vtk files for initial and approximated points
     master.foreach([&](Block<real_t>* b, const diy::Master::ProxyWithLink& cp)
-            { write_vtk_files(b, cp, sci_var); });
+            { 
+                write_vtk_files(b, cp, sci_var, upsample_factor,shrink_ratio,ignore, output_obj_name,output_vtk_name,output_gradient_magnitude, set_zero); });
 }
