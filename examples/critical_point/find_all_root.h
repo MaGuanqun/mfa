@@ -143,50 +143,7 @@ VectorX<T>& intersection, T root_finding_epsilon)
 
 
 template<typename T>
-void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorXi& span_index, VectorX<T>& p, VectorX<T>& f, MatrixX<T>& dev_f,
-                //MatrixX<T>&             ctrl_pts,   //control points of first derivative
-                VectorX<T>&             weights, Eigen::VectorX<T>& local_domain_range 
-                )
-{
-
-    dev_f.resize(span_index.size(),span_index.size());
-    f.resize(span_index.size());
-
-    VectorX<T> f_vector(1);
-    VectorX<T> dev_f_vector(1);    
-
-    // std::cout<<local_domain_range.transpose()<<std::endl;
-
-    VectorXi deriv(span_index.size());
-
-    for(int i=0;i<span_index.size();i++)
-    {
-        for(int j=i;j<span_index.size();j++)
-        {
-            deriv.setZero();
-            deriv[i]+=1;
-            deriv[j]+=1;
-            mfa_extend::recover_mfa(mfa,b,p,dev_f_vector, deriv);
-            // mfa->DecodePt_selectd_span(*mfa_data,span_index, p,deriv,weights,dev_f_vector);
-            dev_f(j,i) = dev_f_vector[0];// / (local_domain_range[i]*local_domain_range[j]);
-            dev_f(i,j) = dev_f_vector[0];
-        }
-    }
-
-    for(int i=0;i<span_index.size();i++)
-    {
-        deriv.setZero();
-        deriv[i]+=1;
-        mfa_extend::recover_mfa(mfa,b,p,f_vector, deriv);
-        // mfa->DecodePt_selectd_span(*mfa_data,span_index, p,deriv,weights,f_vector);
-        f[i] = f_vector[0];///local_domain_range[i];
-    }
-
-}
-
-
-template<typename T>
-void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& p, VectorX<T>& f, MatrixX<T>& dev_f)
+void compute_f_dev_f(const Block<T>* b, VectorX<T>& p, VectorX<T>& f, MatrixX<T>& dev_f)
 {
 
     dev_f.resize(p.size(),p.size());
@@ -194,6 +151,7 @@ void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& p, V
 
     VectorX<T> f_vector(1);
     VectorX<T> dev_f_vector(1);    
+
     // std::cout<<local_domain_range.transpose()<<std::endl;
 
     VectorXi deriv(p.size());
@@ -205,10 +163,10 @@ void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& p, V
             deriv.setZero();
             deriv[i]+=1;
             deriv[j]+=1;
-            mfa_extend::recover_mfa(mfa,b,p,dev_f_vector, deriv);
-            dev_f(j,i) =dev_f_vector[0];// / (local_domain_range[i]*local_domain_range[j]);
+            mfa_extend::recover_mfa(b,p,dev_f_vector, deriv);
+            // mfa->DecodePt_selectd_span(*mfa_data,span_index, p,deriv,weights,dev_f_vector);
+            dev_f(j,i) = dev_f_vector[0];// / (local_domain_range[i]*local_domain_range[j]);
             dev_f(i,j) = dev_f_vector[0];
-        
         }
     }
 
@@ -216,7 +174,8 @@ void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& p, V
     {
         deriv.setZero();
         deriv[i]+=1;
-        mfa_extend::recover_mfa(mfa,b,p,dev_f_vector, deriv);
+        mfa_extend::recover_mfa(b,p,f_vector, deriv);
+        // mfa->DecodePt_selectd_span(*mfa_data,span_index, p,deriv,weights,f_vector);
         f[i] = f_vector[0];///local_domain_range[i];
     }
 
@@ -224,41 +183,39 @@ void compute_f_dev_f(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& p, V
 
 
 
-//only use it as convergence condition
-template<typename T>
-void newton_itr(mfa::MFA<T>* mfa, mfa::MFA_Data<T>* mfa_data, std::vector<int>& span, std::vector<T>& result,T p, int max_itr,
-                //MatrixX<T>&             ctrl_pts,   //control points of first derivative
-                VectorX<T>&             weights,Eigen::VectorXd& local_domain_range)
-{
-    result.clear();
-    T f,dev_f;
-    int i=0;
-    while (i<max_itr)
-    {
-        compute_f_dev_f(mfa,mfa_data, span, p,f,dev_f,weights);
-        p=p-f/dev_f;
-        result.emplace_back(p);
-        i++;
-    }
+// //only use it as convergence condition
+// template<typename T>
+// void newton_itr(const Block<T>* b, std::vector<int>& span, std::vector<T>& result,T p, int max_itr,
+//                 //MatrixX<T>&             ctrl_pts,   //control points of first derivative
+//                 Eigen::VectorXd& local_domain_range)
+// {
+//     result.clear();
+//     T f,dev_f;
+//     int i=0;
+//     while (i<max_itr)
+//     {
+//         compute_f_dev_f(b, p,f,dev_f);
+//         p=p-f/dev_f;
+//         result.emplace_back(p);
+//         i++;
+//     }
     
-}
+// }
 
 
 // newton method with single initial_point
 template<typename T>
-bool newton(const mfa::MFA<T>* mfa, const Block<T>* b,VectorXi& span_index, VectorX<T>& result, VectorX<T>& p, int max_itr,
-               // MatrixX<T>&             ctrl_pts,   //control points of first derivative
-                VectorX<T>&             weights,
+bool newton(const Block<T>* b,VectorX<T>& result, VectorX<T>& p, int max_itr,
                 std::vector<std::vector<T>>& span_range,
                 T d_max_square, VectorX<T>& center,
-                bool& filtered_out,Eigen::VectorX<T>& local_domain_range,Eigen::VectorX<T>& local_min, size_t& itr_num, T root_finding_epsilon)
+                bool& filtered_out, size_t& itr_num, T root_finding_epsilon)
 {
     itr_num=0;
 
 
     MatrixX<T> dev_f;
     VectorX<T> f;
-    compute_f_dev_f(mfa,b,span_index,p,f,dev_f,weights,local_domain_range);
+    compute_f_dev_f(b,p,f,dev_f);
 
     // std::cout<<"f "<<f<<std::endl;
 
@@ -339,7 +296,7 @@ bool newton(const mfa::MFA<T>* mfa, const Block<T>* b,VectorXi& span_index, Vect
             filtered_out = true;
             return false;
         }
-        if(!utility::InDomain(p,local_min,local_domain_range))
+        if(!utility::In_Domain(p,b->core_mins,b->core_maxs))
         {
             filtered_out = true;
             return false;
@@ -355,7 +312,7 @@ bool newton(const mfa::MFA<T>* mfa, const Block<T>* b,VectorXi& span_index, Vect
         // }
 
 
-        compute_f_dev_f(mfa,b,span_index,p,f,dev_f,weights,local_domain_range);   
+        compute_f_dev_f(b,p,f,dev_f);   
 
 
         if(itr_num>0){
@@ -381,85 +338,85 @@ bool newton(const mfa::MFA<T>* mfa, const Block<T>* b,VectorXi& span_index, Vect
 
 }
 
-// newton method with single initial_point, not stick in one span
-template<typename T>
-bool newton(const mfa::MFA<T>* mfa, const Block<T>* b, VectorX<T>& result, VectorX<T>& p, int max_itr,
-                std::vector<std::vector<T>>& span_range,T root_finding_epsilon)
-{
-    int i=0;
-    MatrixX<T> dev_f;
-    VectorX<T> f;
-    compute_f_dev_f(mfa,b,p,f,dev_f);
+// // newton method with single initial_point, not stick in one span
+// template<typename T>
+// bool newton(const Block<T>* b, VectorX<T>& result, VectorX<T>& p, int max_itr,
+//                 std::vector<std::vector<T>>& span_range,T root_finding_epsilon)
+// {
+//     int i=0;
+//     MatrixX<T> dev_f;
+//     VectorX<T> f;
+//     compute_f_dev_f(b,p,f,dev_f);
 
 
-    if(f.squaredNorm()<root_finding_epsilon*root_finding_epsilon)
-    {
-        result = p;
-        return true;
-    }
+//     if(f.squaredNorm()<root_finding_epsilon*root_finding_epsilon)
+//     {
+//         result = p;
+//         return true;
+//     }
 
-    result=p;
+//     result=p;
 
-    T temp_rec;
+//     T temp_rec;
 
 
-    while(i<max_itr)
-    {
-        if(f.size()==2)
-        {
-            double determinant = dev_f.data()[3]*dev_f.data()[0]-dev_f.data()[1]*dev_f.data()[2];
-            if(std::abs(determinant) < HESSIAN_DET_EPSILON)
-            {
-                return false;                
-            }
-            else
-            {  
-                MatrixX<T> inv(2,2);
-                inv.data()[0]=dev_f.data()[3];
-                inv.data()[1]=-dev_f.data()[1];
-                inv.data()[2]=-dev_f.data()[2];
-                inv.data()[3]=dev_f.data()[0];           
-                inv/=determinant;
-                p -= inv*f;
-            }
+//     while(i<max_itr)
+//     {
+//         if(f.size()==2)
+//         {
+//             double determinant = dev_f.data()[3]*dev_f.data()[0]-dev_f.data()[1]*dev_f.data()[2];
+//             if(std::abs(determinant) < HESSIAN_DET_EPSILON)
+//             {
+//                 return false;                
+//             }
+//             else
+//             {  
+//                 MatrixX<T> inv(2,2);
+//                 inv.data()[0]=dev_f.data()[3];
+//                 inv.data()[1]=-dev_f.data()[1];
+//                 inv.data()[2]=-dev_f.data()[2];
+//                 inv.data()[3]=dev_f.data()[0];           
+//                 inv/=determinant;
+//                 p -= inv*f;
+//             }
           
-        }
-        else
-        {
-            if(std::abs(dev_f.determinant()) < HESSIAN_DET_EPSILON)
-            {
-                return false;                
-            }
-            p -= dev_f.colPivHouseholderQr().solve(f);                  
-        }
+//         }
+//         else
+//         {
+//             if(std::abs(dev_f.determinant()) < HESSIAN_DET_EPSILON)
+//             {
+//                 return false;                
+//             }
+//             p -= dev_f.colPivHouseholderQr().solve(f);                  
+//         }
 
-        // std::cout<<"p "<<p.transpose()<<std::endl;
+//         // std::cout<<"p "<<p.transpose()<<std::endl;
 
-        if(!utility::InBlock(span_range,p))
-        {
-            // std::cout<<"not in the block "<<std::endl;
-            return false;
-        }
-
-
-        compute_f_dev_f(mfa,b,p,f,dev_f);
+//         if(!utility::InBlock(span_range,p))
+//         {
+//             // std::cout<<"not in the block "<<std::endl;
+//             return false;
+//         }
 
 
-        if(i>0){
-            if(f.squaredNorm()<root_finding_epsilon*root_finding_epsilon){
+//         compute_f_dev_f(b,p,f,dev_f);
+
+
+//         if(i>0){
+//             if(f.squaredNorm()<root_finding_epsilon*root_finding_epsilon){
                 
-                result = p;
-                return true;
-            }
-        }
+//                 result = p;
+//                 return true;
+//             }
+//         }
 
-        result = p;
-        i++;
-    }
+//         result = p;
+//         i++;
+//     }
 
-    return false;
+//     return false;
 
-}
+// }
 
 // template<typename T>
 // int compute_multi(std::vector<T>& orbit) {
@@ -531,9 +488,10 @@ bool newRoot(VectorX<T>& z, std::vector<VectorX<T>>& root_so_far, T threshold)
 
 // Function to find the roots of the polynomial using Newton's method
 template<typename T>
-void newtonSolve(const mfa::MFA<T>* mfa, const mfa::MFA_Data<T>& mfa_data, const Block<T>* b, VectorXi& span_index, std::vector<VectorX<T>>& root,
-    VectorX<T>&             weights, int& original_root_size, 
-    size_t& filtered_out_num,Eigen::VectorX<T>& local_domain_range, Eigen::VectorX<T>& local_min, T same_root_threshold, size_t& itr_num, T root_finding_epsilon, int maxIter) { 
+void newtonSolve(const mfa::MFA_Data<T>& mfa_data, const Block<T>* b, VectorXi& span_index, std::vector<VectorX<T>>& root,
+    int& original_root_size, 
+    size_t& filtered_out_num,T same_root_threshold, size_t& itr_num, T root_finding_epsilon, int maxIter) 
+{ 
 
     VectorXi one = VectorXi::Ones( mfa_data.p.size());
     // int deg = (mfa_data->p-one).prod();
@@ -630,7 +588,7 @@ void newtonSolve(const mfa::MFA<T>* mfa, const mfa::MFA_Data<T>& mfa_data, const
         filetered_out = false;
 
         size_t current_itr_num=0;
-        bool find_root=newton(mfa, b, span_index, next_root, current_initial_point,maxIter,weights,span_range,d_max_square,center,filetered_out,local_domain_range,local_min,current_itr_num,root_finding_epsilon);
+        bool find_root=newton(b, next_root, current_initial_point,maxIter,span_range,d_max_square,center,filetered_out,current_itr_num,root_finding_epsilon);
         
         itr_num += current_itr_num;
 
@@ -671,16 +629,14 @@ template<typename T>
 void newtonSolve(Block<T>* block, std::vector<std::vector<VectorXi>>& span_index, 
 std::vector<VectorX<T>>& root,//std::vector<int>& multi_of_root,
     //MatrixX<T>&             ctrl_pts,   //control points of first derivative
-    VectorX<T>&             weights, int current_index,
+    int current_index,
     int& original_root_size, size_t& filtered_out_num, T same_root_threshold, size_t& itr_num, T root_finding_epsilon, int maxItr) //(p+1)^d initial points) 
 {
-    VectorX<T> local_domain_range = block->core_maxs-block->core_mins;
-
     for(auto i=0;i<block->mfa->nvars();++i)
     {
-        newtonSolve(block->mfa,block->mfa->var(i),block,span_index[i][current_index], root,weights, 
+        newtonSolve(block->mfa->var(i),block,span_index[i][current_index], root, 
         original_root_size,
-       filtered_out_num,local_domain_range,block->core_mins,same_root_threshold,itr_num,root_finding_epsilon,maxItr);
+       filtered_out_num, same_root_threshold,itr_num,root_finding_epsilon,maxItr);
     }
 }
 
@@ -799,7 +755,7 @@ void convertFromDomain(std::vector<VectorX<T>>& domain_root, std::vector<VectorX
 
 
 template<typename T>
-void getFunctionValue(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<VectorX<T>>& value)
+void getFunctionValue(const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<VectorX<T>>& value)
 {
     value.resize(root.size());
 
@@ -810,7 +766,7 @@ void getFunctionValue(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<Vec
             for(auto i=range.begin();i!=range.end();++i)
             {
                 value[i].resize(1);
-                mfa_extend::recover_mfa(mfa,b,root[i],value[i]);
+                mfa_extend::recover_mfa(b,root[i],value[i]);
             }
         },ap
     );
@@ -819,7 +775,7 @@ void getFunctionValue(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<Vec
 
 
 template<typename T>
-int compute_index(const mfa::MFA<T>* mfa, const Block<T>* b,VectorX<T>& root, T threshold)
+int compute_index(const Block<T>* b,VectorX<T>& root, T threshold)
 {
     VectorXi deriv(root.size());
     MatrixX<T> Hessian;
@@ -835,7 +791,7 @@ int compute_index(const mfa::MFA<T>* mfa, const Block<T>* b,VectorX<T>& root, T 
             deriv.setZero();
             deriv[i]+=1;
             deriv[j]+=1;
-            mfa_extend::recover_mfa(mfa,b,root,deriv_value,deriv);
+            mfa_extend::recover_mfa(b,root,deriv_value,deriv);
             Hessian(j,i) = deriv_value[0];// / (local_domain_range[i]*local_domain_range[j]);
             Hessian(i,j) = deriv_value[0];
         }
@@ -866,7 +822,7 @@ int compute_index(const mfa::MFA<T>* mfa, const Block<T>* b,VectorX<T>& root, T 
 
 
 template<typename T>
-void get_critical_point_index(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<int>& index, T threshold)
+void get_critical_point_index(const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<int>& index, T threshold)
 {
     index.resize(root.size());
     tbb::affinity_partitioner ap;
@@ -875,7 +831,7 @@ void get_critical_point_index(const mfa::MFA<T>* mfa, const Block<T>* b, std::ve
     {
         for(auto i=range.begin();i!=range.end();++i)
         {
-            index[i]=compute_index(mfa,b,root[i],threshold);
+            index[i]=compute_index(b,root[i],threshold);
         }
 
     },ap
@@ -883,7 +839,7 @@ void get_critical_point_index(const mfa::MFA<T>* mfa, const Block<T>* b, std::ve
 }
 
 template<typename T>
-void getDerivative(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<VectorX<T>>& value)
+void getDerivative(const Block<T>* b, std::vector<VectorX<T>>& root,std::vector<VectorX<T>>& value)
 {
     value.resize(root.size());
 
@@ -899,7 +855,7 @@ void getDerivative(const mfa::MFA<T>* mfa, const Block<T>* b, std::vector<Vector
         {
             deriv.setZero();
             deriv[j]=1;
-            mfa_extend::recover_mfa(mfa,b,root[i],deriv_value,deriv);
+            mfa_extend::recover_mfa(b,root[i],deriv_value,deriv);
             value[i][j]=deriv_value[0];        
         }
         // std::cout<<root[i].transpose()<<" "<<value[i][0].transpose()<<" "<<value[i][1].transpose()<<std::endl;

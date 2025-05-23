@@ -54,14 +54,13 @@ namespace mfa_extend
 
     template<typename T>
     void recover_mfa(
-            const mfa::MFA<T>* mfa,
             const Block<T>* b,               // mfa data model
             const VectorX<T>&   point,                  // parameters of point to decode
             VectorX<T>&         cpt,const VectorXi&     derivs = VectorXi())
     {
         VectorX<T> domain_range = b->core_maxs - b->core_mins;
         VectorX<T> param = (point-b->core_mins).cwiseQuotient(domain_range);
-        mfa->DecodeVar(0,param,cpt,derivs);
+        b->mfa->DecodeVar(0,param,cpt,derivs);
 
         if (derivs.size() > 0)
         {

@@ -183,12 +183,12 @@ namespace utility
     }
 
     template<class T>
-    bool InDomain(VectorX<T>& point,const VectorX<T>&         domain_min,
-            const VectorX<T>&         domain_range) // point should lie in [0,1]^d
+    bool In_Domain(VectorX<T>& point,const VectorX<T>&         domain_min,
+            const VectorX<T>&         domain_max) // point should lie in [0,1]^d
     {
         for(int i=0;i<point.size();++i)
         {
-            if(point[i]<domain_min[i] || (point[i] - domain_min[i])>domain_range[i])
+            if(point[i]<domain_min[i] || point[i] >domain_max[i])
             {
                 return false;
             }
@@ -196,6 +196,7 @@ namespace utility
         return true;
 
     }
+
 
     
     template<typename T>
@@ -315,7 +316,7 @@ namespace utility
 
     //there will be 2^n+1 initial points
     template<typename T>
-    void compute_initial_points_iso(std::vector<std::vector<T>>&initial_points_every_domain, VectorXi& degree,  std::vector<std::vector<T>>& span_range) { 
+    void compute_initial_points_iso(std::vector<std::vector<T>>&initial_points_every_domain, const VectorXi& degree,  std::vector<std::vector<T>>& span_range) { 
         // int point_num=std::pow(2,n)+1;
         initial_points_every_domain.resize(span_range.size());
         for(int i=0;i<span_range.size();i++)
@@ -332,7 +333,7 @@ namespace utility
     }
 
         template<typename T>
-    void compute_initial_points_rv(std::vector<std::vector<T>>&initial_points_every_domain, VectorXi& degree,  std::vector<std::vector<T>>& span_range) { 
+    void compute_initial_points_rv(std::vector<std::vector<T>>&initial_points_every_domain, const VectorXi& degree,  std::vector<std::vector<T>>& span_range) { 
         // int point_num=std::pow(2,n)+1;
         initial_points_every_domain.resize(span_range.size());
         for(int i=0;i<span_range.size();i++)

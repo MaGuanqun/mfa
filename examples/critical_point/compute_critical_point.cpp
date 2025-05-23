@@ -211,7 +211,7 @@ int main(int argc, char** argv)
 
                 auto cpt_extract_start_time = std::chrono::high_resolution_clock::now();
                 std::vector<int>multi_root_span; 
-                Eigen::VectorXd weights=Eigen::VectorXd::Ones(b->mfa->var(0).tmesh.tensor_prods[0].ctrl_pts.rows());
+                // Eigen::VectorXd weights=Eigen::VectorXd::Ones(b->mfa->var(0).tmesh.tensor_prods[0].ctrl_pts.rows());
 
                 std::vector<std::vector<VectorXd>> root_temp_record(selected_span[0].size());
                 std::vector<int>original_root_size(selected_span[0].size(),0);
@@ -228,7 +228,7 @@ int main(int argc, char** argv)
                     {
                         size_t block_itr_num=0;
                         // std::vector<VectorXd> root_span;
-                        find_all_roots::newtonSolve(b,selected_span,root_temp_record[i],weights,i,original_root_size[i],filter_out,same_root_epsilon,block_itr_num,root_finding_epsilon,max_itr);
+                        find_all_roots::newtonSolve(b,selected_span,root_temp_record[i],i,original_root_size[i],filter_out,same_root_epsilon,block_itr_num,root_finding_epsilon,max_itr);
                         itr_num.fetch_add(block_itr_num);
 
                         // if(!root_span.empty())
@@ -275,10 +275,10 @@ int main(int argc, char** argv)
 
                 // std::cout<<"root size "<<root_ori.size()<<" "<<root[index].size()<<std::endl;
                 // find_all_roots::convertFromDomain(domain_root[index],root[index],b->core_mins,local_domain_range);
-                find_all_roots::getFunctionValue(b->mfa, b,domain_root[index],value[index]);
+                find_all_roots::getFunctionValue(b,domain_root[index],value[index]);
 
 
-                find_all_roots::get_critical_point_index(b->mfa, b,domain_root[index],critical_point_type[index],HESSIAN_DET_EPSILON);
+                find_all_roots::get_critical_point_index(b,domain_root[index],critical_point_type[index],HESSIAN_DET_EPSILON);
 
                 // find_all_roots::getDerivative(b->mfa, b->vars[0].mfa_data,root[index],deriv_value[index]);
                 // double result_gradient_average = find_all_roots::getAverageNorm(deriv_value[index]);
@@ -288,7 +288,7 @@ int main(int argc, char** argv)
                 auto end_time = std::chrono::high_resolution_clock::now();
 
                 // std::vector<int> critical_point_index_;
-                // critical_point_index::critical_point_index(b->mfa, b->vars[0].mfa_data,root[index],critical_point_index_,HESSIAN_DET_EPSILON);
+                // critical_point_index::critical_point_index(b,root[index],critical_point_index_,HESSIAN_DET_EPSILON);
                 // critical_point_index::output_index_summary(critical_point_index_);
 
                 // std::vector<VectorXd> test;

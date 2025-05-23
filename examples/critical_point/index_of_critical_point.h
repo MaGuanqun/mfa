@@ -15,11 +15,12 @@
 #include "utility_function.h"
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues> 
+#include "mfa_extend.h"
 
 namespace critical_point_index{
 
 template<class T>
-void compute_dev_f(mfa::MFA<T>* mfa, mfa::MFA_Data<T>* mfa_data, VectorX<T>& p,MatrixX<T>& dev_f)
+void compute_dev_f(const Block<T>* b, VectorX<T>& p,MatrixX<T>& dev_f)
 {
     dev_f.resize(p.size(),p.size());
     VectorXi deriv(p.size());
@@ -31,7 +32,8 @@ void compute_dev_f(mfa::MFA<T>* mfa, mfa::MFA_Data<T>* mfa_data, VectorX<T>& p,M
             deriv.setZero();
             deriv[i]+=1;
             deriv[j]+=1;
-            mfa->DecodePt(*mfa_data,p,deriv,dev_f_vector);
+            mfa_extend::recover_mfa(b,p,dev_f_vector,deriv);
+            // mfa->DecodePt(*mfa_data,p,deriv,dev_f_vector);
             dev_f(j,i) = dev_f_vector[0];// / (local_domain_range[i]*local_domain_range[j]);
             dev_f(i,j) = dev_f_vector[0];
         }
@@ -69,13 +71,13 @@ int check_index(MatrixX<T>& matrix, T threshold)
 }
 
 template<class T>
-void critical_point_index(mfa::MFA<T>* mfa, mfa::MFA_Data<T>* mfa_data, std::vector<VectorX<T>>& p, std::vector<int>& index, T threshold)
+void critical_point_index(const Block<T>* b, std::vector<VectorX<T>>& p, std::vector<int>& index, T threshold)
 {
     MatrixX<T> dev_f;
     index.resize(p.size());
     for(int i=0;i<p.size();i++)
     {        
-        compute_dev_f(mfa,mfa_data,p[i],dev_f);
+        compute_dev_f(b,p[i],dev_f);
         index[i] = check_index(dev_f,threshold);
     }
 

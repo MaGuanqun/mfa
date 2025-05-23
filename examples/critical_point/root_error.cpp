@@ -120,7 +120,7 @@ int main(int argc, char** argv)
     master.foreach([&](Block<real_t>* b, const diy::Master::ProxyWithLink& cp)
     {
 
-        find_all_roots::getDerivative(b->mfa,b,root[index],value[index]);
+        find_all_roots::getDerivative(b,root[index],value[index]);
 
         index++;    
     });
